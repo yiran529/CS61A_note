@@ -1,0 +1,26 @@
+Interfaces:
+Message passing:Obj interact by looking up attr on each other
+The attr look-up rules allow diff data types to respond to the same message
+A shared-message(attr name) that elicits(引诱）similar behaviors from diff obj
+	classes is a powerful method of abstraction
+An interface is a set of shared messages,along with a specification of what they mean
+ 
+Ex:
+Classes that implement __repr__and__str__methods that return py or human readable
+	strings implement an interface for producing string representations
+Python 中的__str__ 和 __repr__方法都是用来显示的，即描述对象信息的。 
+1. __str__的目标是可读性，或者说，__str__的结果是让人看的。主要用来打印，即 print 操作， 
+2. __repr__的目标是准确性，或者说，__repr__的结果是让解释器用的。__repr__用于交互模式下提示回应，
+If you ever just define that there are a bunch of classes that all have the same method
+	and all those methods do similar things,then you've created an interface
+demo:
+class Ratio:
+def __init__(self,n,d):
+	self.numer=n
+	self.denom=d
+def __repr__(self):
+	return 'Ratio({0},{1})'.format(self.numer,self.denom)
+def __str__(self):
+	return '{0}/{1}'.format(self.numer,self.denom)
+half=Ratio(1,2)→Ratio(1,2)
+print(half)→1/2#倘若没有自定义repr和str，那么print(half)与print(repr(half))都会出错

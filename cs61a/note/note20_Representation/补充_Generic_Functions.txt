@@ -1,0 +1,151 @@
+
+2.7.4   Generic Functions
+Generic functions are methods or functions that apply to arguments of different types. We have seen many examples already. The Complex.add method is generic, because it can take either a ComplexRI or ComplexMA as the value for other. This flexibility was gained by ensuring that both ComplexRI and ComplexMA share an interface. Using interfaces and message passing is only one of several methods used to implement generic functions. We will consider two others in this section: type dispatching and type coercion.
+
+Suppose that, in addition to our complex number classes, we implement a Rational class to represent fractions exactly. The add and mul methods express the same computations as the add_rational and mul_rational functions from earlier in the chapter.
+
+>>> from fractions import gcd
+>>> class Rational(Number):
+        def __init__(self, numer, denom):
+            g = gcd(numer, denom)
+            self.numer = numer // g
+            self.denom = denom // g
+        def __repr__(self):
+            return 'Rational({0}, {1})'.format(self.numer, self.denom)
+        def add(self, other):
+            nx, dx = self.numer, self.denom
+            ny, dy = other.numer, other.denom
+            return Rational(nx * dy + ny * dx, dx * dy)
+        def mul(self, other):
+            numer = self.numer * other.numer
+            denom = self.denom * other.denom
+            return Rational(numer, denom)
+We have implemented the interface of the Number superclass by including add and mul methods. As a result, we can add and multiply rational numbers using familiar operators.
+
+>>> Rational(2, 5) + Rational(1, 10)
+Rational(1, 2)
+>>> Rational(1, 4) * Rational(2, 3)
+Rational(1, 6)
+However, we cannot yet add a rational number to a complex number, although in mathematics such a combination is well-defined. We would like to introduce this cross-type operation in some carefully controlled way, so that we can support it without seriously violating our abstraction barriers. There is a tension between the outcomes we desire: we would like to be able to add a complex number to a rational number, and we would like to do so using a generic __add__ method that does the right thing with all numeric types. At the same time, we would like to separate the concerns of complex numbers and rational numbers whenever possible, in order to maintain a modular program.
+
+Type dispatching. One way to implement cross-type operations is to select behavior based on the types of the arguments to a function or method. The idea of type dispatching is to write functions that inspect the type of arguments they receive, then execute code that is appropriate for those types.
+
+The built-in function isinstance takes an object and a class. It returns true if the object has a class that either is or inherits from the given class.
+
+>>> c = ComplexRI(1, 1)
+>>> isinstance(c, ComplexRI)
+True
+>>> isinstance(c, Complex)
+True
+>>> isinstance(c, ComplexMA)
+False
+A simple example of type dispatching is an is_real function that uses a different implementation for each type of complex number.
+
+>>> def is_real(c):
+        """Return whether c is a real number with no imaginary part."""
+        if isinstance(c, ComplexRI):
+            return c.imag == 0
+        elif isinstance(c, ComplexMA):
+            return c.angle % pi == 0
+>>> is_real(ComplexRI(1, 1))
+False
+>>> is_real(ComplexMA(2, pi))
+True
+Type dispatching is not always performed using isinstance. For arithmetic, we will give a type_tag attribute to Rational and Complex instances that has a string value. When two values x and y have the same type_tag, then we can combine them directly with x.add(y). If not, we need a cross-type operation.
+
+>>> Rational.type_tag = 'rat'
+>>> Complex.type_tag = 'com'
+>>> Rational(2, 5).type_tag == Rational(1, 2).type_tag
+True
+>>> ComplexRI(1, 1).type_tag == ComplexMA(2, pi/2).type_tag
+True
+>>> Rational(2, 5).type_tag == ComplexRI(1, 1).type_tag
+False
+To combine complex and rational numbers, we write functions that rely on both of their representations simultaneously. Below, we rely on the fact that a Rational can be converted approximately to a float value that is a real number. The result can be combined with a complex number.
+
+>>> def add_complex_and_rational(c, r):
+        return ComplexRI(c.real + r.numer/r.denom, c.imag)
+Multiplication involves a similar conversion. In polar form, a real number in the complex plane always has a positive magnitude. The angle 0 indicates a positive number. The angle pi indicates a negative number.
+
+>>> def mul_complex_and_rational(c, r):
+        r_magnitude, r_angle = r.numer/r.denom, 0
+        if r_magnitude < 0:
+            r_magnitude, r_angle = -r_magnitude, pi
+        return ComplexMA(c.magnitude * r_magnitude, c.angle + r_angle)
+Both addition and multiplication are commutative, so swapping the argument order can use the same implementations of these cross-type operations.
+
+>>> def add_rational_and_complex(r, c):
+        return add_complex_and_rational(c, r)
+>>> def mul_rational_and_complex(r, c):
+        return mul_complex_and_rational(c, r)
+The role of type dispatching is to ensure that these cross-type operations are used at appropriate times. Below, we rewrite the Number superclass to use type dispatching for its __add__ and __mul__ methods.
+
+We use the type_tag attribute to distinguish types of arguments. One could directly use the built-in isinstance method as well, but tags simplify the implementation. Using type tags also illustrates that type dispatching is not necessarily linked to the Python object system, but instead a general technique for creating generic functions over heterogeneous domains.
+
+The __add__ method considers two cases. First, if two arguments have the same type tag, then it assumes that add method of the first can take the second as an argument. Otherwise, it checks whether a dictionary of cross-type implementations, called adders, contains a function that can add arguments of those type tags. If there is such a function, the cross_apply method finds and applies it. The __mul__ method has a similar structure.
+
+>>> class Number:
+        def __add__(self, other):
+            if self.type_tag == other.type_tag:
+                return self.add(other)
+            elif (self.type_tag, other.type_tag) in self.adders:
+                return self.cross_apply(other, self.adders)
+        def __mul__(self, other):
+            if self.type_tag == other.type_tag:
+                return self.mul(other)
+            elif (self.type_tag, other.type_tag) in self.multipliers:
+                return self.cross_apply(other, self.multipliers)
+        def cross_apply(self, other, cross_fns):
+            cross_fn = cross_fns[(self.type_tag, other.type_tag)]
+            return cross_fn(self, other)
+        adders = {("com", "rat"): add_complex_and_rational,
+                  ("rat", "com"): add_rational_and_complex}
+        multipliers = {("com", "rat"): mul_complex_and_rational,
+                       ("rat", "com"): mul_rational_and_complex}
+In this new definition of the Number class, all cross-type implementations are indexed by pairs of type tags in the adders and multipliers dictionaries.
+
+This dictionary-based approach to type dispatching is extensible. New subclasses of Number could install themselves into the system by declaring a type tag and adding cross-type operations to Number.adders and Number.multipliers. They could also define their own adders and multipliers in a subclass.
+
+While we have introduced some complexity to the system, we can now mix types in addition and multiplication expressions.
+
+>>> ComplexRI(1.5, 0) + Rational(3, 2)
+ComplexRI(3, 0)
+>>> Rational(-1, 2) * ComplexMA(4, pi/2)
+ComplexMA(2, 1.5 * pi)
+Coercion. In the general situation of completely unrelated operations acting on completely unrelated types, implementing explicit cross-type operations, cumbersome though it may be, is the best that one can hope for. Fortunately, we can sometimes do better by taking advantage of additional structure that may be latent in our type system. Often the different data types are not completely independent, and there may be ways by which objects of one type may be viewed as being of another type. This process is called coercion. For example, if we are asked to arithmetically combine a rational number with a complex number, we can view the rational number as a complex number whose imaginary part is zero. After doing so, we can use Complex.add and Complex.mul to combine them.
+
+In general, we can implement this idea by designing coercion functions that transform an object of one type into an equivalent object of another type. Here is a typical coercion function, which transforms a rational number to a complex number with zero imaginary part:
+
+>>> def rational_to_complex(r):
+        return ComplexRI(r.numer/r.denom, 0)
+The alternative definition of the Number class performs cross-type operations by attempting to coerce both arguments to the same type. The coercions dictionary indexes all possible coercions by a pair of type tags, indicating that the corresponding value coerces a value of the first type to a value of the second type.
+
+It is not generally possible to coerce an arbitrary data object of each type into all other types. For example, there is no way to coerce an arbitrary complex number to a rational number, so there will be no such conversion implementation in the coercions dictionary.
+
+The coerce method returns two values with the same type tag. It inspects the type tags of its arguments, compares them to entries in the coercions dictionary, and converts one argument to the type of the other using coerce_to. Only one entry in coercions is necessary to complete our cross-type arithmetic system, replacing the four cross-type functions in the type-dispatching version of Number.
+
+>>> class Number:
+        def __add__(self, other):
+            x, y = self.coerce(other)
+            return x.add(y)
+        def __mul__(self, other):
+            x, y = self.coerce(other)
+            return x.mul(y)
+        def coerce(self, other):
+            if self.type_tag == other.type_tag:
+                return self, other
+            elif (self.type_tag, other.type_tag) in self.coercions:
+                return (self.coerce_to(other.type_tag), other)
+            elif (other.type_tag, self.type_tag) in self.coercions:
+                return (self, other.coerce_to(self.type_tag))
+        def coerce_to(self, other_tag):
+            coercion_fn = self.coercions[(self.type_tag, other_tag)]
+            return coercion_fn(self)
+        coercions = {('rat', 'com'): rational_to_complex}
+This coercion scheme has some advantages over the method of defining explicit cross-type operations. Although we still need to write coercion functions to relate the types, we need to write only one function for each pair of types rather than a different function for each set of types and each generic operation. What we are counting on here is the fact that the appropriate transformation between types depends only on the types themselves, not on the particular operation to be applied.
+
+Further advantages come from extending coercion. Some more sophisticated coercion schemes do not just try to coerce one type into another, but instead may try to coerce two different types each into a third common type. Consider a rhombus and a rectangle: neither is a special case of the other, but both can be viewed as quadrilaterals. Another extension to coercion is iterative coercion, in which one data type is coerced into another via intermediate types. Consider that an integer can be converted into a real number by first converting it into a rational number, then converting that rational number into a real number. Chaining coercion in this way can reduce the total number of coercion functions that are required by a program.
+
+Despite its advantages, coercion does have potential drawbacks. For one, coercion functions can lose information when they are applied. In our example, rational numbers are exact representations, but become approximations when they are converted to complex numbers.
+
+Some programming languages have automatic coercion systems built in. In fact, early versions of Python had a __coerce__ special method on objects. In the end, the complexity of the built-in coercion system did not justify its use, and so it was removed. Instead, particular operators apply coercion to their arguments as needed.

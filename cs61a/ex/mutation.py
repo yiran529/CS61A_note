@@ -1,0 +1,12 @@
+s=[1,2]
+t=[5,6]
+s[2:]=[t]
+t[1]=0
+print(s)
+p=[1,2,3]
+p[1:3]=[p]
+p.extend(p)
+print(p)
+r=[[1,2],[3,4]]
+r[0].extend([r[1]])
+print(r)
